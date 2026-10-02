@@ -28,12 +28,11 @@ jobs:
         run: |
           cp config linux-5.10/.config
           cd linux-5.10
-          # Strip the old build path whitelist from config
           sed -i 's/CONFIG_UNUSED_KSYMS_WHITELIST=.*/CONFIG_UNUSED_KSYMS_WHITELIST=""/g' .config
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
-      - name: Compile 8812au.ko
+      - name: Compile Driver Module
         run: |
           cd rtl8812au
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KSRC=../linux-5.10 -j$(nproc)
@@ -58,11 +57,11 @@ jobs:
           until [ "$(getprop sys.boot_completed)" = "1" ]; do
               sleep 3
           done
-          insmod $MODDIR/8812au.ko
+          insmod $MODDIR/88XXau.ko
           SEOF
 
           chmod +x service.sh
-          cp ../rtl8812au/8812au.ko .
+          cp ../rtl8812au/88XXau.ko .
           zip -r ../rtl8812au_magisk.zip .
 
       - name: Upload Artifacts
@@ -70,5 +69,5 @@ jobs:
         with:
           name: rtl8812au-android12-gki
           path: |
-            rtl8812au/8812au.ko
+            rtl8812au/88XXau.ko
             rtl8812au_magisk.zip
