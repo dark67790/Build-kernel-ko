@@ -22,7 +22,7 @@ jobs:
 
       - name: Clone RTL8812AU Driver Source
         run: |
-          git clone https://github.com/aircrack-ng/rtl8812au.submodules.git rtl8812au
+          git clone https://github.com/aircrack-ng/rtl8812au.git rtl8812au
 
       - name: Prepare Kernel Headers
         run: |
