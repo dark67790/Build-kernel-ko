@@ -28,6 +28,8 @@ jobs:
         run: |
           cp config linux-5.10/.config
           cd linux-5.10
+          # Strip the old build path whitelist from config
+          sed -i 's/CONFIG_UNUSED_KSYMS_WHITELIST=.*/CONFIG_UNUSED_KSYMS_WHITELIST=""/g' .config
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
