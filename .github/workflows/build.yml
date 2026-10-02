@@ -1,0 +1,72 @@
+name: Build Android 12 GKI RTL8812AU Module
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu bc bison flex libssl-dev libncurses-dev git libelf-dev zip
+
+      - name: Clone Android 12 GKI Kernel Source
+        run: |
+          git clone --depth 1 https://android.googlesource.com/kernel/common -b android12-5.10 linux-5.10
+
+      - name: Clone RTL8812AU Driver Source
+        run: |
+          git clone https://github.com/aircrack-ng/rtl8812au.submodules.git rtl8812au
+
+      - name: Prepare Kernel Headers
+        run: |
+          cp config linux-5.10/.config
+          cd linux-5.10
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
+
+      - name: Compile 8812au.ko
+        run: |
+          cd rtl8812au
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KSRC=../linux-5.10 -j$(nproc)
+
+      - name: Package Magisk Module
+        run: |
+          mkdir -p magisk_module
+          cd magisk_module
+          
+          cat << 'MEOF' > module.prop
+          id=rtl8812au_driver
+          name=RTL8812AU Wi-Fi Driver
+          version=v1.0
+          versionCode=1
+          author=dark67790
+          description=Loads RTL8812AU kernel module at boot for Droidspaces / NetHunter.
+          MEOF
+
+          cat << 'SEOF' > service.sh
+          #!/system/bin/sh
+          MODDIR=${0%/*}
+          until [ "$(getprop sys.boot_completed)" = "1" ]; do
+              sleep 3
+          done
+          insmod $MODDIR/8812au.ko
+          SEOF
+
+          chmod +x service.sh
+          cp ../rtl8812au/8812au.ko .
+          zip -r ../rtl8812au_magisk.zip .
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtl8812au-android12-gki
+          path: |
+            rtl8812au/8812au.ko
+            rtl8812au_magisk.zip
