@@ -3,16 +3,16 @@ package com.example.wlan1vpn
 import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
-import android.system.Os
-import android.system.OsConstants
 import android.util.Log
+import hev.htproxy.TProxyService
+import java.io.File
 
 class Wlan1VpnService : VpnService() {
 
     private var tunFd: ParcelFileDescriptor? = null
     private var socksServer: Wlan1SocksServer? = null
-    private var tun2proxyProcess: Process? = null
     private val socksPort = 10800
+    private var tunnelStarted = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (tunFd == null) start()
@@ -34,49 +34,42 @@ class Wlan1VpnService : VpnService() {
         }
         tunFd = fd
 
-        // A subprocess normally doesn't inherit this fd (Android marks it
-        // close-on-exec). Clear that flag so tun2proxy can use it after exec().
-        try {
-            Os.fcntlInt(fd.fileDescriptor, OsConstants.F_SETFD, 0)
-        } catch (e: Exception) {
-            Log.e(TAG, "failed to clear FD_CLOEXEC on tun fd", e)
-        }
-
         val server = Wlan1SocksServer(this, socksPort)
         socksServer = server
         server.start()
 
-        // give the SOCKS server a moment to bind before tun2proxy connects to it
+        // give the SOCKS server a moment to bind before the tunnel engine connects to it
         Thread.sleep(300)
 
-        val binaryPath = applicationInfo.nativeLibraryDir + "/libtun2proxy.so"
-        val rawFd = fd.fd
-        val cmd = listOf(
-            binaryPath,
-            "--tun-fd", rawFd.toString(),
-            "--proxy", "socks5://127.0.0.1:$socksPort"
+        val configFile = File(filesDir, "hev-tunnel.yaml")
+        configFile.writeText(
+            """
+            tunnel:
+              mtu: 1500
+              multi-queue: false
+              ipv4: 10.0.0.2
+
+            socks5:
+              port: $socksPort
+              address: 127.0.0.1
+              udp: 'tcp'
+            """.trimIndent()
         )
 
-        try {
-            val pb = ProcessBuilder(cmd)
-            pb.redirectErrorStream(true)
-            val process = pb.start()
-            tun2proxyProcess = process
-
-            Thread {
-                process.inputStream.bufferedReader().forEachLine {
-                    Log.i("tun2proxy", it)
-                }
-            }.start()
-
-            Log.i(TAG, "tun2proxy launched: $cmd")
-        } catch (e: Exception) {
-            Log.e(TAG, "failed to launch tun2proxy", e)
-        }
+        // hev-socks5-tunnel runs as a native library loaded INSIDE this process
+        // (via JNI), not a separate process - so there's no fd-passing problem:
+        // the fd number we hand it is simply valid, same address space.
+        tunnelStarted = TProxyService.TProxyStartService(configFile.absolutePath, fd.fd)
+        Log.i(TAG, "TProxyStartService -> $tunnelStarted")
     }
 
     override fun onDestroy() {
-        tun2proxyProcess?.destroy()
+        if (tunnelStarted) {
+            try { TProxyService.TProxyStopService() } catch (e: Exception) {
+                Log.e(TAG, "TProxyStopService failed", e)
+            }
+            tunnelStarted = false
+        }
         socksServer?.shutdown()
         tunFd?.close()
         tunFd = null

@@ -29,30 +29,17 @@ jobs:
           echo "$sdk_root/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$sdk_root/platform-tools" >> "$GITHUB_PATH"
 
-      - name: Install SDK platform, build-tools & NDK
+      - name: Install SDK platform & build-tools
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-
-      - name: Build tun2proxy for Android (arm64)
+      - name: Download hev-socks5-tunnel AAR
         run: |
-          NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-          TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          git clone --depth 1 https://github.com/tun2proxy/tun2proxy.git /tmp/tun2proxy
-          cd /tmp/tun2proxy
-          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android24-clang"
-          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android24-clang"
-          cargo build --release --target aarch64-linux-android
-          BIN=$(find target/aarch64-linux-android/release -maxdepth 1 -type f -executable -name 'tun2proxy*' | head -n1)
-          echo "Found binary: $BIN"
-          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
-          cp "$BIN" "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libtun2proxy.so"
+          mkdir -p app/libs
+          curl -sSL -o app/libs/hev-socks5-tunnel.aar \
+            https://github.com/heiher/hev-socks5-tunnel/releases/latest/download/hev-socks5-tunnel.aar
+          ls -la app/libs/
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3

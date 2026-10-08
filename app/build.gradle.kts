@@ -37,5 +37,12 @@ android {
     }
 }
 
+repositories {
+    flatDir {
+        dirs("libs")
+    }
+}
+
 dependencies {
+    implementation(files("libs/hev-socks5-tunnel.aar"))
 }
