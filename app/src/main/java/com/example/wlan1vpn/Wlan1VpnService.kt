@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import hev.htproxy.TProxyService
 import java.io.File
 
 class Wlan1VpnService : VpnService() {
@@ -59,13 +58,15 @@ class Wlan1VpnService : VpnService() {
         // hev-socks5-tunnel runs as a native library loaded INSIDE this process
         // (via JNI), not a separate process - so there's no fd-passing problem:
         // the fd number we hand it is simply valid, same address space.
-        tunnelStarted = TProxyService.TProxyStartService(configFile.absolutePath, fd.fd)
+        // (TProxyService itself is the class already compiled into the AAR -
+        // we don't declare it ourselves, that caused a duplicate-class crash.)
+        tunnelStarted = hev.htproxy.TProxyService.TProxyStartService(configFile.absolutePath, fd.fd)
         Log.i(TAG, "TProxyStartService -> $tunnelStarted")
     }
 
     override fun onDestroy() {
         if (tunnelStarted) {
-            try { TProxyService.TProxyStopService() } catch (e: Exception) {
+            try { hev.htproxy.TProxyService.TProxyStopService() } catch (e: Exception) {
                 Log.e(TAG, "TProxyStopService failed", e)
             }
             tunnelStarted = false
