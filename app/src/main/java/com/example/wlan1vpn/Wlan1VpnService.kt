@@ -3,26 +3,19 @@ package com.example.wlan1vpn
 import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
-import java.io.FileInputStream
 
-/**
- * Step 1: just establish the TUN interface so ConnectivityService registers
- * this as a real network (this is the part raw `ip rule`/`iptables` tricks
- * could never do). Packets land in the read loop below but are currently
- * dropped - no forwarding yet. That's the next step, added once we've
- * confirmed this part alone makes Android treat the connection as a real
- * network for apps.
- */
 class Wlan1VpnService : VpnService() {
 
     private var tunFd: ParcelFileDescriptor? = null
-    @Volatile private var running = false
+    private var socksServer: Wlan1SocksServer? = null
+    private var tun2proxyProcess: Process? = null
+    private val socksPort = 10800
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (tunFd == null) {
-            start()
-        }
+        if (tunFd == null) start()
         return START_STICKY
     }
 
@@ -34,37 +27,63 @@ class Wlan1VpnService : VpnService() {
             .addDnsServer("8.8.8.8")
             .setMtu(1500)
 
-        tunFd = builder.establish()
-        if (tunFd == null) {
-            Log.e("wlan1vpn", "establish() returned null - permission not granted?")
+        val fd = builder.establish()
+        if (fd == null) {
+            Log.e(TAG, "establish() returned null - permission not granted?")
             return
         }
+        tunFd = fd
 
-        running = true
-        Thread {
-            val input = FileInputStream(tunFd!!.fileDescriptor)
-            val buffer = ByteArray(32767)
-            Log.i("wlan1vpn", "tun established, reading packets (forwarding not implemented yet)")
-            while (running) {
-                try {
-                    val len = input.read(buffer)
-                    if (len > 0) {
-                        // TODO next step: parse IP header, open/forward the
-                        // connection via wlan1 (protect() + the uid ip-rule
-                        // trick), write replies back to tunFd.
-                    }
-                } catch (e: Exception) {
-                    if (running) Log.e("wlan1vpn", "read loop error", e)
-                    break
+        // A subprocess normally doesn't inherit this fd (Android marks it
+        // close-on-exec). Clear that flag so tun2proxy can use it after exec().
+        try {
+            Os.fcntlInt(fd.fileDescriptor, OsConstants.F_SETFD, 0)
+        } catch (e: Exception) {
+            Log.e(TAG, "failed to clear FD_CLOEXEC on tun fd", e)
+        }
+
+        val server = Wlan1SocksServer(this, socksPort)
+        socksServer = server
+        server.start()
+
+        // give the SOCKS server a moment to bind before tun2proxy connects to it
+        Thread.sleep(300)
+
+        val binaryPath = applicationInfo.nativeLibraryDir + "/libtun2proxy.so"
+        val rawFd = fd.fd
+        val cmd = listOf(
+            binaryPath,
+            "--tun-fd", rawFd.toString(),
+            "--proxy", "socks5://127.0.0.1:$socksPort"
+        )
+
+        try {
+            val pb = ProcessBuilder(cmd)
+            pb.redirectErrorStream(true)
+            val process = pb.start()
+            tun2proxyProcess = process
+
+            Thread {
+                process.inputStream.bufferedReader().forEachLine {
+                    Log.i("tun2proxy", it)
                 }
-            }
-        }.start()
+            }.start()
+
+            Log.i(TAG, "tun2proxy launched: $cmd")
+        } catch (e: Exception) {
+            Log.e(TAG, "failed to launch tun2proxy", e)
+        }
     }
 
     override fun onDestroy() {
-        running = false
+        tun2proxyProcess?.destroy()
+        socksServer?.shutdown()
         tunFd?.close()
         tunFd = null
         super.onDestroy()
+    }
+
+    companion object {
+        private const val TAG = "wlan1vpn"
     }
 }

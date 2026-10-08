@@ -17,11 +17,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install Android SDK command-line tools
+        run: |
+          sdk_root="$HOME/android-sdk"
+          mkdir -p "$sdk_root/cmdline-tools"
+          curl -sSL -o cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q cmdline-tools.zip -d "$sdk_root/cmdline-tools"
+          mv "$sdk_root/cmdline-tools/cmdline-tools" "$sdk_root/cmdline-tools/latest"
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"
+          echo "$sdk_root/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$sdk_root/platform-tools" >> "$GITHUB_PATH"
 
-      - name: Install SDK platform & build-tools
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Install SDK platform, build-tools & NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Build tun2proxy for Android (arm64)
+        run: |
+          NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+          TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          git clone --depth 1 https://github.com/tun2proxy/tun2proxy.git /tmp/tun2proxy
+          cd /tmp/tun2proxy
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android24-clang"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android24-clang"
+          cargo build --release --target aarch64-linux-android
+          BIN=$(find target/aarch64-linux-android/release -maxdepth 1 -type f -executable -name 'tun2proxy*' | head -n1)
+          echo "Found binary: $BIN"
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
+          cp "$BIN" "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libtun2proxy.so"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
