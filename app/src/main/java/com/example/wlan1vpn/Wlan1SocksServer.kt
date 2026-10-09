@@ -106,8 +106,10 @@ class Wlan1SocksServer(private val vpnService: VpnService, private val port: Int
 
             val r = Socket()
             remote = r
-            vpnService.protect(r)
+            val protectedOk = vpnService.protect(r)
+            Log.i(TAG, "connecting to $destAddress:$destPort (protect() -> $protectedOk)")
             r.connect(InetSocketAddress(destAddress, destPort), 10000)
+            Log.i(TAG, "connected to $destAddress:$destPort")
 
             output.write(byteArrayOf(5, 0, 0, 1, 0, 0, 0, 0, 0, 0))
             output.flush()
@@ -116,8 +118,9 @@ class Wlan1SocksServer(private val vpnService: VpnService, private val port: Int
             val t2 = Thread { pipe(r.getInputStream(), client.getOutputStream()) }
             t1.start(); t2.start()
             t1.join(); t2.join()
+            Log.i(TAG, "session to $destAddress:$destPort ended")
         } catch (e: Exception) {
-            Log.e(TAG, "client session error", e)
+            Log.e(TAG, "connect/relay failed (dest may be unreachable via wlan1)", e)
         } finally {
             try { client.close() } catch (_: Exception) {}
             try { remote?.close() } catch (_: Exception) {}
