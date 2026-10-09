@@ -40,20 +40,27 @@ class Wlan1VpnService : VpnService() {
         // give the SOCKS server a moment to bind before the tunnel engine connects to it
         Thread.sleep(300)
 
+        val logFile = File(filesDir, "hev-tunnel.log")
         val configFile = File(filesDir, "hev-tunnel.yaml")
         configFile.writeText(
             """
             tunnel:
               mtu: 1500
               multi-queue: false
+              name: tun0
               ipv4: 10.0.0.2
 
             socks5:
               port: $socksPort
               address: 127.0.0.1
               udp: 'tcp'
+
+            misc:
+              log-level: debug
+              log-file: ${logFile.absolutePath}
             """.trimIndent()
         )
+        Log.i(TAG, "wrote config to ${configFile.absolutePath}, engine log will be at ${logFile.absolutePath}")
 
         // hev-socks5-tunnel runs as a native library loaded INSIDE this process
         // (via JNI), not a separate process - so there's no fd-passing problem:
