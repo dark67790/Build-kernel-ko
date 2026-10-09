@@ -64,7 +64,7 @@ class Wlan1VpnService : VpnService() {
             socks5:
               port: $socksPort
               address: 127.0.0.1
-              udp: 'tcp'
+              udp: 'udp'
 
             misc:
               log-level: debug
