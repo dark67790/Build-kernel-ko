@@ -26,6 +26,17 @@ class Wlan1VpnService : VpnService() {
             .addDnsServer("8.8.8.8")
             .setMtu(1500)
 
+        // Without this, OUR OWN app's outbound traffic (the SOCKS server's
+        // connections) also gets captured by our own tun0, since the VPN
+        // otherwise covers every UID including our own - that's the
+        // self-loop causing instant fake "connects" to nothing. Excluding
+        // ourselves here fixes it directly, independent of protect().
+        try {
+            builder.addDisallowedApplication(packageName)
+        } catch (e: Exception) {
+            Log.e(TAG, "failed to exclude own app from VPN capture", e)
+        }
+
         val fd = builder.establish()
         if (fd == null) {
             Log.e(TAG, "establish() returned null - permission not granted?")
